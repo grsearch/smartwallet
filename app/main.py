@@ -75,8 +75,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     now = datetime.utcnow()
     token_rows = []
     for t in tokens:
-        elapsed = max(0, int((now - t.discovered_at).total_seconds())) if t.discovered_at else 0
-        current_age_seconds = max(0, int(t.age_seconds + elapsed))
+        # age_seconds is already computed from source timestamp at scan time.
+        # Do not add elapsed-from-discovery (it overcounts for old records).
+        current_age_seconds = max(0, int(t.age_seconds or 0))
         token_rows.append(
             {
                 "symbol": t.symbol,

@@ -72,3 +72,9 @@ curl -X POST http://127.0.0.1:8000/api/run/daily
 - LP/FDV：`LP/FDV > 10%`
 
 其中 AGE/FDV/LP 数据会通过 Birdeye + DexScreener 多来源聚合并刷新到目标代币记录。
+
+
+## 预存白名单地址质量过滤
+
+- Top traders 地址在进入候选池前会检查地址格式和近期交易记录。
+- 钱包日评估阶段若无交易记录（txs 为空）会直接降为 D 并从候选池清理，不进入 Top150。

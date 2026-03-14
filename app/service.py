@@ -226,6 +226,18 @@ class SmartWalletService:
         net = await self.birdeye.wallet_net_worth(wallet.address)
         txs = await self.birdeye.wallet_transactions(wallet.address, limit=100)
 
+        if not txs:
+            wallet.smart_score = 0
+            wallet.grade = "D"
+            wallet.weight = 0
+            wallet.status = "drop"
+            wallet.formal_whitelist = 0
+            wallet.active_7d = 0
+            wallet.active_30d = 0
+            wallet.daily_trade_count = 0
+            wallet.updated_at = datetime.utcnow()
+            return
+
         pnl_data = pnl.get("data", {})
         wallet.pnl_30d = float(pnl_data.get("pnl30d") or pnl_data.get("realizedPnl30d") or 0)
         wallet.win_rate = float(pnl_data.get("winRate") or 0)
@@ -301,6 +313,14 @@ class SmartWalletService:
                 continue
 
         ranked = db.scalars(select(WalletCandidate).order_by(desc(WalletCandidate.smart_score))).all()
+
+        # hard prune wallets with no transaction footprint
+        for w in ranked:
+            if w.daily_trade_count <= 0:
+                db.delete(w)
+        db.flush()
+        ranked = db.scalars(select(WalletCandidate).order_by(desc(WalletCandidate.smart_score))).all()
+
         top_150 = ranked[: settings.max_prelist_wallets]
 
         allowed_150 = {w.address for w in top_150}
