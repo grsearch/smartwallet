@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 每 15 分钟扫描 DexScreener trending（前20）
+- 每 15 分钟扫描 DexScreener trending 页面入口（`https://dexscreener.com/?rankBy=trendingScoreH24&order=desc`）前20
 - 用 Birdeye 验证代币条件：
   - age: 4小时~7天
   - FDV > 500,000
@@ -46,3 +46,6 @@ TRENDING_SCAN_MINUTES=15
 curl -X POST http://127.0.0.1:8000/api/run/trending
 curl -X POST http://127.0.0.1:8000/api/run/daily
 ```
+
+
+> 说明：趋势入口优先使用 DexScreener 页面（按 `trendingScoreH24` 排序）解析；若页面结构变更导致解析失败，才会回退到公开 API 作为兜底。
