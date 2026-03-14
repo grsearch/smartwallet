@@ -26,6 +26,8 @@ HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "20"))
 HTTP_RETRIES = int(os.getenv("HTTP_RETRIES", "3"))
 WALLET_CONCURRENCY = int(os.getenv("WALLET_CONCURRENCY", "3"))
 GENERAL_CONCURRENCY = int(os.getenv("GENERAL_CONCURRENCY", "6"))
+USE_TOP_PNL_SCRAPER = os.getenv("USE_TOP_PNL_SCRAPER", "1").strip() in {"1", "true", "True", "yes", "on"}
+TOP_PNL_SCRAPER_HEADLESS = os.getenv("TOP_PNL_SCRAPER_HEADLESS", "1").strip() in {"1", "true", "True", "yes", "on"}
 
 
 @dataclass
@@ -270,6 +272,21 @@ class TokenDiscoveryService:
 class CandidateWalletDiscoveryService:
     def __init__(self, client: BirdeyeClient) -> None:
         self.client = client
+        self._top_pnl_scraper = None
+
+    async def _discover_wallets_from_top_pnl_page(self, token_address: str) -> set[str]:
+        if not USE_TOP_PNL_SCRAPER:
+            return set()
+
+        try:
+            if self._top_pnl_scraper is None:
+                from birdeye_top_pnl_scraper import BirdeyeTopPnlScraper
+
+                self._top_pnl_scraper = BirdeyeTopPnlScraper(headless=TOP_PNL_SCRAPER_HEADLESS)
+            rows = await self._top_pnl_scraper.scrape_token_top_pnl(token_address)
+            return {row.wallet_address for row in rows if row.wallet_address}
+        except Exception:
+            return set()
 
     async def discover_candidate_wallets(self, tokens: list[TokenInfo]) -> dict[str, set[str]]:
         result: dict[str, set[str]] = {}
@@ -277,6 +294,9 @@ class CandidateWalletDiscoveryService:
         smart_money_index = await self._build_smart_money_index()
         for token in tokens:
             wallets = set(smart_money_index.get(token.address, set()))
+
+            top_pnl_wallets = await self._discover_wallets_from_top_pnl_page(token.address)
+            wallets |= top_pnl_wallets
 
             top_trader_wallets = await self._discover_wallets_from_top_traders(token.address)
             wallets |= top_trader_wallets
@@ -289,6 +309,7 @@ class CandidateWalletDiscoveryService:
                     "token": token.address,
                     "symbol": token.symbol,
                     "smart_money_count": len(smart_money_index.get(token.address, set())),
+                    "top_pnl_count": len(top_pnl_wallets),
                     "top_traders_count": len(top_trader_wallets),
                     "final_wallet_count": len(wallets),
                 }
@@ -663,6 +684,7 @@ async def main() -> None:
             print(
                 f"- {row.get('symbol') or '-'} {row.get('token')}: "
                 f"smart_money={row.get('smart_money_count', 0)} "
+                f"top_pnl={row.get('top_pnl_count', 0)} "
                 f"top_traders={row.get('top_traders_count', 0)} "
                 f"final={row.get('final_wallet_count', 0)}"
             )
