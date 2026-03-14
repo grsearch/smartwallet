@@ -41,15 +41,20 @@ class SmartWalletService:
             if not token_address:
                 continue
 
+            dex_market = {}
+            try:
+                dex_market = await self.dex.fetch_token_market_data(token_address, item.get("pairAddress", ""))
+            except Exception:
+                dex_market = {}
+
             ov = await self.birdeye.token_overview(token_address)
             data = ov.get("data", {})
-            create_time = data.get("createTime")
-            if not create_time:
+            age = self.resolve_age_seconds(data, dex_market)
+            if age is None:
                 continue
 
-            age = self.birdeye.to_age_seconds(create_time)
-            fdv = float(item.get("fdv") or data.get("fdv") or 0)
-            liquidity = float(item.get("liquidity", {}).get("usd") or data.get("liquidity") or 0)
+            fdv = self.resolve_fdv(item, data, dex_market)
+            liquidity = self.resolve_liquidity_usd(item, data, dex_market)
             lp_ratio = (liquidity / fdv) if fdv > 0 else 0
             lp_burned = float(data.get("lpBurnedPercent") or data.get("lp_burned_percent") or 0)
 
@@ -68,8 +73,8 @@ class SmartWalletService:
             tw = TokenWatch(
                 chain="solana",
                 address=token_address,
-                symbol=item.get("symbol") or item.get("baseToken", {}).get("symbol", ""),
-                pair_address=item.get("pairAddress", ""),
+                symbol=(item.get("symbol") or dex_market.get("symbol") or item.get("baseToken", {}).get("symbol", "")),
+                pair_address=item.get("pairAddress", "") or dex_market.get("pairAddress", ""),
                 fdv=fdv,
                 lp_usd=liquidity,
                 lp_fdv_ratio=lp_ratio,
@@ -84,6 +89,51 @@ class SmartWalletService:
 
         db.commit()
         return inserted
+
+    def resolve_age_seconds(self, birdeye_data: dict, dex_market: dict) -> int | None:
+        """Resolve AGE with ordered fallbacks:
+        1) Birdeye liquidityAddedAt (LP-based age, preferred)
+        2) DexScreener pairCreatedAt
+        3) Birdeye createdAt/createTime
+        """
+        candidates = [
+            birdeye_data.get("liquidityAddedAt"),
+            dex_market.get("pairCreatedAt"),
+            birdeye_data.get("createdAt"),
+            birdeye_data.get("createTime"),
+        ]
+        for raw in candidates:
+            if raw in (None, ""):
+                continue
+            try:
+                return self.birdeye.to_age_seconds(float(raw))
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _as_float(value) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def resolve_fdv(self, item: dict, birdeye_data: dict, dex_market: dict) -> float:
+        return max(
+            self._as_float(item.get("fdv")),
+            self._as_float(birdeye_data.get("fdv")),
+            self._as_float(birdeye_data.get("fdvUsd")),
+            self._as_float(birdeye_data.get("fullyDilutedValuation")),
+            self._as_float(dex_market.get("fdv")),
+        )
+
+    def resolve_liquidity_usd(self, item: dict, birdeye_data: dict, dex_market: dict) -> float:
+        return max(
+            self._as_float((item.get("liquidity") or {}).get("usd")),
+            self._as_float(birdeye_data.get("liquidity")),
+            self._as_float(birdeye_data.get("liquidityUsd")),
+            self._as_float((dex_market.get("liquidity") or {}).get("usd")),
+        )
 
     async def scan_top_traders_for_token(self, db: Session, token: TokenWatch):
         items = await self.birdeye.token_top_traders(token.address, limit=20)

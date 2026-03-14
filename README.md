@@ -49,3 +49,10 @@ curl -X POST http://127.0.0.1:8000/api/run/daily
 
 
 > 说明：趋势入口优先使用 DexScreener 页面（按 `trendingScoreH24` 排序）解析；若页面结构变更导致解析失败，才会回退到公开 API 作为兜底。
+
+
+## AGE 与 FDV 数据策略
+
+- AGE 来源优先级：`Birdeye.liquidityAddedAt`（优先）→ `DexScreener.pairCreatedAt` → `Birdeye.createdAt/createTime`。
+- FDV 来源优先级：DexScreener trending 字段 + Birdeye `fdv/fdvUsd` + DexScreener token endpoint 聚合，取可用值。
+- 这样可避免部分代币出现 AGE 为空或 FDV 缺失时被误过滤。
