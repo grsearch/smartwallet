@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy import desc, select
@@ -80,7 +81,7 @@ class SmartWalletService:
                 lp_fdv_ratio=lp_ratio,
                 age_seconds=age,
                 lp_burned_percent=lp_burned,
-                expires_at=datetime.now(UTC).replace(tzinfo=None) + timedelta(days=settings.wallet_expiry_days),
+                expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=settings.wallet_expiry_days),
             )
             db.add(tw)
             db.flush()
@@ -138,9 +139,14 @@ class SmartWalletService:
     async def scan_top_traders_for_token(self, db: Session, token: TokenWatch):
         items = await self.birdeye.token_top_traders(token.address, limit=20)
         for idx, row in enumerate(items, start=1):
-            wallet = row.get("owner") or row.get("wallet") or row.get("address")
-            if not wallet:
+            wallet = self.extract_wallet_address(row)
+            if not wallet or not self.is_valid_solana_wallet(wallet):
                 continue
+
+            # Ignore program-like/no-history addresses that are not tradable wallets.
+            if not await self.wallet_has_recent_transactions(wallet):
+                continue
+
             hit = WalletTopTraderHit(wallet_address=wallet, token_address=token.address, rank=idx)
             db.add(hit)
 
@@ -151,6 +157,34 @@ class SmartWalletService:
 
         token.last_top_trader_scan_at = datetime.utcnow()
         db.flush()
+
+    @staticmethod
+    def extract_wallet_address(row: dict) -> str:
+        candidates = [
+            row.get("owner"),
+            row.get("ownerAddress"),
+            row.get("wallet"),
+            row.get("walletAddress"),
+            row.get("maker"),
+            row.get("trader"),
+            row.get("address"),
+        ]
+        for c in candidates:
+            if isinstance(c, str) and c:
+                return c
+        return ""
+
+    @staticmethod
+    def is_valid_solana_wallet(address: str) -> bool:
+        # base58-like, 32~44 chars
+        return bool(re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", address))
+
+    async def wallet_has_recent_transactions(self, wallet: str) -> bool:
+        try:
+            txs = await self.birdeye.wallet_transactions(wallet, limit=5)
+            return len(txs) > 0
+        except Exception:
+            return False
 
     async def scan_token_whitelist_daily(self, db: Session):
         now = datetime.utcnow()
@@ -183,9 +217,9 @@ class SmartWalletService:
         times = [x.get("blockTime") for x in txs if x.get("blockTime")]
         if times:
             latest = max(times)
-            last_dt = datetime.fromtimestamp(latest, tz=UTC)
-            wallet.active_7d = int((datetime.now(UTC) - last_dt).days <= 7)
-            wallet.active_30d = int((datetime.now(UTC) - last_dt).days <= 30)
+            last_dt = datetime.fromtimestamp(latest, tz=timezone.utc)
+            wallet.active_7d = int((datetime.now(timezone.utc) - last_dt).days <= 7)
+            wallet.active_30d = int((datetime.now(timezone.utc) - last_dt).days <= 30)
         else:
             wallet.active_7d = 0
             wallet.active_30d = 0

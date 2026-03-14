@@ -28,8 +28,36 @@ class BirdEyeClient:
         return await self._get("/defi/token_overview", {"address": token_address})
 
     async def token_top_traders(self, token_address: str, limit: int = 20) -> list[dict[str, Any]]:
-        data = await self._get("/defi/v2/tokens/top_traders", {"address": token_address, "limit": limit})
-        return data.get("data", {}).get("items", [])
+        # Use the official endpoint and include common filters used by Birdeye v2.
+        # Some deployments accept `address`, some `token_address`, so we try both.
+        params_candidates = [
+            {
+                "address": token_address,
+                "sort_by": "volume",
+                "sort_type": "desc",
+                "time_frame": "24h",
+                "offset": 0,
+                "limit": limit,
+            },
+            {
+                "token_address": token_address,
+                "sort_by": "volume",
+                "sort_type": "desc",
+                "time_frame": "24h",
+                "offset": 0,
+                "limit": limit,
+            },
+        ]
+
+        for params in params_candidates:
+            try:
+                data = await self._get("/defi/v2/tokens/top_traders", params)
+            except Exception:
+                continue
+            items = data.get("data", {}).get("items", [])
+            if items:
+                return items
+        return []
 
     async def wallet_pnl(self, wallet_address: str) -> dict[str, Any]:
         return await self._get("/v1/wallet/pnl", {"wallet": wallet_address})

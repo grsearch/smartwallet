@@ -56,3 +56,10 @@ curl -X POST http://127.0.0.1:8000/api/run/daily
 - AGE 来源优先级：`Birdeye.liquidityAddedAt`（优先）→ `DexScreener.pairCreatedAt` → `Birdeye.createdAt/createTime`。
 - FDV 来源优先级：DexScreener trending 字段 + Birdeye `fdv/fdvUsd` + DexScreener token endpoint 聚合，取可用值。
 - 这样可避免部分代币出现 AGE 为空或 FDV 缺失时被误过滤。
+
+
+## Top traders 采集说明
+
+- 使用 Birdeye 官方接口：`/defi/v2/tokens/top_traders`。
+- 解析多个可能的钱包字段（`owner/ownerAddress/wallet/walletAddress/maker/trader`）。
+- 对地址做 Solana base58 格式校验，并二次检查钱包是否存在近期交易，过滤无交易记录地址。
