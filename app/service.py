@@ -59,8 +59,7 @@ class SmartWalletService:
                 continue
             if lp_ratio < settings.min_lp_fdv_ratio:
                 continue
-            if lp_burned < 100:
-                continue
+            # LP burned rule disabled per latest product instruction.
 
             existing = db.scalar(select(TokenWatch).where(TokenWatch.address == token_address))
             if existing:

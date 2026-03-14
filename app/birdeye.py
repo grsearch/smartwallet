@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
-
 from app.config import settings
 
 
@@ -18,6 +16,8 @@ class BirdEyeClient:
         }
 
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        import httpx
+
         url = f"{self.base_url}{path}"
         async with httpx.AsyncClient(timeout=20) as client:
             res = await client.get(url, headers=self.headers, params=params)
@@ -44,4 +44,14 @@ class BirdEyeClient:
     @staticmethod
     def to_age_seconds(create_time: int | float) -> int:
         now = datetime.now(tz=timezone.utc).timestamp()
-        return int(now - float(create_time))
+        ts = BirdEyeClient.normalize_unix_timestamp(create_time)
+        return int(now - ts)
+
+    @staticmethod
+    def normalize_unix_timestamp(raw: int | float) -> float:
+        """Normalize unix timestamps that may arrive in seconds/ms/us/ns."""
+        ts = float(raw)
+        # birdeye values can be ms/us in some datasets. reduce to seconds.
+        while ts > 10_000_000_000:
+            ts /= 1000.0
+        return ts
