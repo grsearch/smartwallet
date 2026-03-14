@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 每 15 分钟扫描 DexScreener trending 页面入口（`https://dexscreener.com/?rankBy=trendingScoreH24&order=desc`）前20
+- 每 15 分钟扫描 DexScreener trending 页面入口（`https://dexscreener.com/solana?rankBy=trendingScoreH24&order=desc`）前20
 - 用 Birdeye 验证代币条件：
   - age: 4小时~7天
   - FDV > 500,000
@@ -78,3 +78,9 @@ curl -X POST http://127.0.0.1:8000/api/run/daily
 
 - Top traders 地址在进入候选池前会检查地址格式和近期交易记录。
 - 钱包日评估阶段若无交易记录（txs 为空）会直接降为 D 并从候选池清理，不进入 Top150。
+
+
+## 扫描失败原因排查
+
+- 每次趋势扫描会写入 `trending_scan_summary` 系统事件，包含：候选总数、收录数量、各类过滤失败计数（AGE/FDV/LP-FDV/缺字段等）。
+- 可在 dashboard 的系统事件区查看，快速定位“为什么看起来符合条件却未收录”。

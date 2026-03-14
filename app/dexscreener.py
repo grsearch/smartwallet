@@ -18,7 +18,7 @@ class DexScreenerClient:
     """
 
     def __init__(self):
-        self.trending_entry_url = "https://dexscreener.com/?rankBy=trendingScoreH24&order=desc"
+        self.trending_entry_url = "https://dexscreener.com/solana?rankBy=trendingScoreH24&order=desc"
         self.fallback_api_url = "https://api.dexscreener.com/token-profiles/latest/v1"
         self.token_pairs_url = "https://api.dexscreener.com/latest/dex/tokens/{token}"
 

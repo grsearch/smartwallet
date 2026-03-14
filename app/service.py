@@ -33,13 +33,16 @@ class SmartWalletService:
     async def scan_trending_tokens(self, db: Session) -> int:
         trending = await self.dex.fetch_trending(settings.top_trending_limit)
         inserted = 0
+        skip_stats: dict[str, int] = defaultdict(int)
 
         for item in trending:
             chain = item.get("chainId", "")
             if chain not in ("solana", "sol"):
+                skip_stats["non_solana"] += 1
                 continue
             token_address = item.get("tokenAddress") or item.get("baseToken", {}).get("address")
             if not token_address:
+                skip_stats["missing_token_address"] += 1
                 continue
 
             dex_market = {}
@@ -52,6 +55,7 @@ class SmartWalletService:
             data = ov.get("data", {})
             age = self.resolve_age_seconds(data, dex_market)
             if age is None:
+                skip_stats["missing_age_source"] += 1
                 continue
 
             fdv = self.resolve_fdv(item, data, dex_market)
@@ -60,10 +64,13 @@ class SmartWalletService:
             lp_burned = float(data.get("lpBurnedPercent") or data.get("lp_burned_percent") or 0)
 
             if not (settings.min_age_seconds <= age <= settings.max_age_seconds):
+                skip_stats["age_out_of_range"] += 1
                 continue
             if fdv < settings.min_fdv:
+                skip_stats["fdv_below_threshold"] += 1
                 continue
             if lp_ratio < settings.min_lp_fdv_ratio:
+                skip_stats["lp_fdv_below_threshold"] += 1
                 continue
             # LP burned rule disabled per latest product instruction.
 
@@ -78,6 +85,7 @@ class SmartWalletService:
                 existing.age_seconds = age
                 existing.lp_burned_percent = lp_burned
                 db.flush()
+                skip_stats["already_watched_refreshed"] += 1
                 continue
 
             tw = TokenWatch(
@@ -97,6 +105,14 @@ class SmartWalletService:
             inserted += 1
             await self.scan_top_traders_for_token(db, tw)
 
+        summary_payload = {
+            "event": "trending_scan_summary",
+            "timestamp": datetime.utcnow().isoformat(),
+            "total_candidates": len(trending),
+            "inserted": inserted,
+            "skip_stats": dict(skip_stats),
+        }
+        db.add(SystemEvent(event_type="trending_scan_summary", payload=json.dumps(summary_payload, ensure_ascii=False)))
         db.commit()
         return inserted
 
