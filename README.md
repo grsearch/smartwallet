@@ -54,7 +54,7 @@ curl -X POST http://127.0.0.1:8000/api/run/daily
 ## AGE 与 FDV 数据策略
 
 - AGE 来源优先级：`Birdeye.liquidityAddedAt`（优先）→ `DexScreener.pairCreatedAt` → `Birdeye.createdAt/createTime`。
-- FDV 来源优先级：DexScreener trending 字段 + Birdeye `fdv/fdvUsd` + DexScreener token endpoint 聚合，取可用值。
+- FDV 来源优先级：Birdeye `fdv/fdvUsd` + DexScreener token endpoint（不再直接信任 trending 页面快照字段）。
 - 这样可避免部分代币出现 AGE 为空或 FDV 缺失时被误过滤。
 
 
@@ -71,7 +71,7 @@ curl -X POST http://127.0.0.1:8000/api/run/daily
 - FDV：`FDV > 500000`
 - LP/FDV：`LP/FDV > 10%`
 
-其中 AGE/FDV/LP 数据会通过 Birdeye + DexScreener 多来源聚合并刷新到目标代币记录。
+其中 AGE/FDV/LP 数据会通过 Birdeye + DexScreener token detail 聚合并刷新到目标代币记录。
 
 
 ## 预存白名单地址质量过滤
@@ -84,3 +84,9 @@ curl -X POST http://127.0.0.1:8000/api/run/daily
 
 - 每次趋势扫描会写入 `trending_scan_summary` 系统事件，包含：候选总数、收录数量、各类过滤失败计数（AGE/FDV/LP-FDV/缺字段等）。
 - 可在 dashboard 的系统事件区查看，快速定位“为什么看起来符合条件却未收录”。
+
+
+## Top traders 候选地址进一步过滤
+
+- 排除明显非钱包地址（如已知 token mint 地址、`pump` 结尾地址）。
+- 候选地址需同时满足：有近期交易记录，且钱包 PnL/NetWorth 至少一个接口可返回有效数据。

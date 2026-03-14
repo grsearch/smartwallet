@@ -160,7 +160,8 @@ class SmartWalletService:
             (birdeye_data.get("market") or {}).get("fdv"),
             (birdeye_data.get("market") or {}).get("fdvUsd"),
         )
-        dex_fdv = self._first_numeric(item.get("fdv"), dex_market.get("fdv"))
+        # prefer authoritative pair/token detail sources; avoid noisy page snapshot defaults
+        dex_fdv = self._first_numeric(dex_market.get("fdv"))
         return max(dex_fdv, birdeye_fdv)
 
     def resolve_liquidity_usd(self, item: dict, birdeye_data: dict, dex_market: dict) -> float:
@@ -170,21 +171,23 @@ class SmartWalletService:
             (birdeye_data.get("liquidity") or {}).get("usd") if isinstance(birdeye_data.get("liquidity"), dict) else 0,
             (birdeye_data.get("market") or {}).get("liquidityUsd"),
         )
-        dex_liq = self._first_numeric(
-            (item.get("liquidity") or {}).get("usd"),
-            (dex_market.get("liquidity") or {}).get("usd"),
-        )
+        dex_liq = self._first_numeric((dex_market.get("liquidity") or {}).get("usd"))
         return max(dex_liq, birdeye_liq)
 
     async def scan_top_traders_for_token(self, db: Session, token: TokenWatch):
         items = await self.birdeye.token_top_traders(token.address, limit=20)
+        known_token_addresses = set(db.scalars(select(TokenWatch.address)).all())
         for idx, row in enumerate(items, start=1):
             wallet = self.extract_wallet_address(row)
             if not wallet or not self.is_valid_solana_wallet(wallet):
                 continue
 
+            # Filter obvious token mint/program addresses from candidate wallets.
+            if wallet in known_token_addresses or wallet.lower().endswith("pump"):
+                continue
+
             # Ignore program-like/no-history addresses that are not tradable wallets.
-            if not await self.wallet_has_recent_transactions(wallet):
+            if not await self.wallet_is_eligible_candidate(wallet):
                 continue
 
             hit = WalletTopTraderHit(wallet_address=wallet, token_address=token.address, rank=idx)
@@ -219,10 +222,20 @@ class SmartWalletService:
         # base58-like, 32~44 chars
         return bool(re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", address))
 
-    async def wallet_has_recent_transactions(self, wallet: str) -> bool:
+    async def wallet_is_eligible_candidate(self, wallet: str) -> bool:
         try:
             txs = await self.birdeye.wallet_transactions(wallet, limit=5)
-            return len(txs) > 0
+            if len(txs) == 0:
+                return False
+
+            pnl = await self.birdeye.wallet_pnl(wallet)
+            net = await self.birdeye.wallet_net_worth(wallet)
+            pnl_data = pnl.get("data") if isinstance(pnl, dict) else None
+            net_data = net.get("data") if isinstance(net, dict) else None
+            if not pnl_data and not net_data:
+                return False
+
+            return True
         except Exception:
             return False
 
