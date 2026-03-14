@@ -159,6 +159,48 @@ class BirdeyeClient:
     async def get_token_trades(self, token_address: str, limit: int = 50, offset: int = 0) -> dict[str, Any]:
         return await self._request("GET", "/defi/txs/token", params={"address": token_address, "offset": offset, "limit": limit})
 
+    async def get_token_top_traders(self, token_address: str, limit: int = 10) -> dict[str, Any]:
+        """Fetch top traders with Birdeye v2 endpoint and parameter compatibility.
+
+        Birdeye typically limits this endpoint to 1..10.
+        """
+        bounded_limit = max(1, min(limit, 10))
+        param_candidates = [
+            {
+                "address": token_address,
+                "offset": 0,
+                "limit": bounded_limit,
+                "sort_by": "volume",
+                "sort_type": "desc",
+                "time_frame": "24h",
+            },
+            {
+                "token_address": token_address,
+                "offset": 0,
+                "limit": bounded_limit,
+                "sort_by": "volume",
+                "sort_type": "desc",
+                "time_frame": "24h",
+            },
+            {
+                "address": token_address,
+                "offset": 0,
+                "limit": bounded_limit,
+                "sort_by": "pnl",
+                "sort_type": "desc",
+                "time_frame": "24h",
+            },
+        ]
+
+        for params in param_candidates:
+            try:
+                data = await self._request("GET", "/defi/v2/tokens/top_traders", params=params)
+                if extract_items(data):
+                    return data
+            except Exception:
+                continue
+        return {"success": True, "data": {"items": []}}
+
     async def get_smart_money_token_list(self, limit: int = 50, offset: int = 0) -> dict[str, Any]:
         return await self._request("GET", "/smart-money/v1/token/list", params={"limit": limit, "offset": offset})
 
@@ -231,14 +273,42 @@ class CandidateWalletDiscoveryService:
 
     async def discover_candidate_wallets(self, tokens: list[TokenInfo]) -> dict[str, set[str]]:
         result: dict[str, set[str]] = {}
+        self.last_discovery_diagnostics: list[dict[str, Any]] = []
         smart_money_index = await self._build_smart_money_index()
         for token in tokens:
             wallets = set(smart_money_index.get(token.address, set()))
+
+            top_trader_wallets = await self._discover_wallets_from_top_traders(token.address)
+            wallets |= top_trader_wallets
+
             if len(wallets) < 3:
                 wallets |= await self._discover_wallets_from_token_trades(token.address)
+
+            self.last_discovery_diagnostics.append(
+                {
+                    "token": token.address,
+                    "symbol": token.symbol,
+                    "smart_money_count": len(smart_money_index.get(token.address, set())),
+                    "top_traders_count": len(top_trader_wallets),
+                    "final_wallet_count": len(wallets),
+                }
+            )
+
             for wallet in wallets:
                 result.setdefault(wallet, set()).add(token.address)
         return result
+
+    async def _discover_wallets_from_top_traders(self, token_address: str) -> set[str]:
+        data = await self.client.get_token_top_traders(token_address, limit=10)
+        items = extract_items(data)
+        wallets: set[str] = set()
+        for item in items:
+            for key in ("owner", "ownerAddress", "wallet", "walletAddress", "address", "trader", "maker"):
+                addr = item.get(key)
+                if isinstance(addr, str) and addr:
+                    wallets.add(addr)
+                    break
+        return wallets
 
     async def _build_smart_money_index(self) -> dict[str, set[str]]:
         data = await self.client.get_smart_money_token_list(limit=100, offset=0)
@@ -563,6 +633,7 @@ class WhitelistBuilder:
             "token_count": len(tokens),
             "wallet_count": len(scores),
             "tokens": [asdict(x) for x in tokens],
+            "token_wallet_discovery_diagnostics": self.wallet_discovery.last_discovery_diagnostics,
             "candidate_whitelist": [asdict(x) for x in candidate_pool],
             "formal_whitelist": [asdict(x) for x in formal_pool],
         }
@@ -586,6 +657,15 @@ async def main() -> None:
         print(f"target tokens = {result['token_count']}")
         print(f"candidate wallets = {len(result['candidate_whitelist'])}")
         print(f"formal wallets = {len(result['formal_whitelist'])}")
+        print()
+        print("token wallet discovery diagnostics:")
+        for row in result.get("token_wallet_discovery_diagnostics", [])[:20]:
+            print(
+                f"- {row.get('symbol') or '-'} {row.get('token')}: "
+                f"smart_money={row.get('smart_money_count', 0)} "
+                f"top_traders={row.get('top_traders_count', 0)} "
+                f"final={row.get('final_wallet_count', 0)}"
+            )
     finally:
         await client.aclose()
 
