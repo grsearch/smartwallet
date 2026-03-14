@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smart Wallet Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Smart Wallet Dashboard</h1>
+    <p>更新时间: {{ now }}</p>
+  </header>
+
+  <section class="grid">
+    <div class="card">
+      <h2>正式白名单 (Top 100)</h2>
+      <table>
+        <thead><tr><th>#</th><th>Address</th><th>Score</th><th>Grade</th><th>Weight</th></tr></thead>
+        <tbody>
+          {% for w in formal %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td><a href="https://gmgn.ai/sol/address/{{ w.address }}" target="_blank">{{ w.address }}</a></td>
+            <td>{{ '%.2f'|format(w.smart_score) }}</td>
+            <td>{{ w.grade }}</td>
+            <td>{{ w.weight }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>预存白名单 (Top 150)</h2>
+      <table>
+        <thead><tr><th>#</th><th>Address</th><th>Score</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for w in prelist %}
+          <tr><td>{{ loop.index }}</td><td>{{ w.address }}</td><td>{{ '%.2f'|format(w.smart_score) }}</td><td>{{ w.status }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>目标代币白名单 (7天窗口)</h2>
+      <table>
+        <thead><tr><th>Symbol</th><th>Address</th><th>FDV</th><th>LP/FDV</th><th>Age(h)</th></tr></thead>
+        <tbody>
+          {% for t in tokens %}
+          <tr>
+            <td>{{ t.symbol }}</td>
+            <td>{{ t.address }}</td>
+            <td>{{ '%.0f'|format(t.fdv) }}</td>
+            <td>{{ '%.2f'|format(t.lp_fdv_ratio*100) }}%</td>
+            <td>{{ '%.1f'|format(t.age_seconds/3600) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>系统事件</h2>
+      <ul class="event-list">
+      {% for e in events %}
+        <li><strong>{{ e.event_type }}</strong> - {{ e.created_at }}</li>
+      {% endfor %}
+      </ul>
+      <h3>等级分布</h3>
+      <pre>{{ distribution }}</pre>
+    </div>
+  </section>
+</body>
+</html>
