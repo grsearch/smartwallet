@@ -1,0 +1,10 @@
+body { font-family: Inter, Arial, sans-serif; margin: 0; background: #0b1020; color: #e9ecf3; }
+header { padding: 20px 28px; border-bottom: 1px solid #2b3351; background: #121935; }
+h1 { margin: 0; font-size: 26px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 18px; }
+.card { background: #141d3e; border: 1px solid #2b3351; border-radius: 12px; padding: 12px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { padding: 6px; border-bottom: 1px solid #2b3351; text-align: left; }
+a { color: #8ec5ff; text-decoration: none; }
+.event-list { max-height: 220px; overflow: auto; }
+pre { background: #0b1020; padding: 10px; border-radius: 8px; }
