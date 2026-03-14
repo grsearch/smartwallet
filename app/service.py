@@ -69,6 +69,15 @@ class SmartWalletService:
 
             existing = db.scalar(select(TokenWatch).where(TokenWatch.address == token_address))
             if existing:
+                # refresh token metrics for dashboard / latest filtering visibility
+                existing.symbol = item.get("symbol") or dex_market.get("symbol") or existing.symbol
+                existing.pair_address = item.get("pairAddress", "") or dex_market.get("pairAddress", "")
+                existing.fdv = fdv
+                existing.lp_usd = liquidity
+                existing.lp_fdv_ratio = lp_ratio
+                existing.age_seconds = age
+                existing.lp_burned_percent = lp_burned
+                db.flush()
                 continue
 
             tw = TokenWatch(
@@ -119,22 +128,37 @@ class SmartWalletService:
         except (TypeError, ValueError):
             return 0.0
 
+    def _first_numeric(self, *values) -> float:
+        for value in values:
+            n = self._as_float(value)
+            if n > 0:
+                return n
+        return 0.0
+
     def resolve_fdv(self, item: dict, birdeye_data: dict, dex_market: dict) -> float:
-        return max(
-            self._as_float(item.get("fdv")),
-            self._as_float(birdeye_data.get("fdv")),
-            self._as_float(birdeye_data.get("fdvUsd")),
-            self._as_float(birdeye_data.get("fullyDilutedValuation")),
-            self._as_float(dex_market.get("fdv")),
+        birdeye_fdv = self._first_numeric(
+            birdeye_data.get("fdv"),
+            birdeye_data.get("fdvUsd"),
+            birdeye_data.get("fullyDilutedValuation"),
+            birdeye_data.get("marketCap"),
+            (birdeye_data.get("market") or {}).get("fdv"),
+            (birdeye_data.get("market") or {}).get("fdvUsd"),
         )
+        dex_fdv = self._first_numeric(item.get("fdv"), dex_market.get("fdv"))
+        return max(dex_fdv, birdeye_fdv)
 
     def resolve_liquidity_usd(self, item: dict, birdeye_data: dict, dex_market: dict) -> float:
-        return max(
-            self._as_float((item.get("liquidity") or {}).get("usd")),
-            self._as_float(birdeye_data.get("liquidity")),
-            self._as_float(birdeye_data.get("liquidityUsd")),
-            self._as_float((dex_market.get("liquidity") or {}).get("usd")),
+        birdeye_liq = self._first_numeric(
+            birdeye_data.get("liquidityUsd"),
+            birdeye_data.get("liquidity"),
+            (birdeye_data.get("liquidity") or {}).get("usd") if isinstance(birdeye_data.get("liquidity"), dict) else 0,
+            (birdeye_data.get("market") or {}).get("liquidityUsd"),
         )
+        dex_liq = self._first_numeric(
+            (item.get("liquidity") or {}).get("usd"),
+            (dex_market.get("liquidity") or {}).get("usd"),
+        )
+        return max(dex_liq, birdeye_liq)
 
     async def scan_top_traders_for_token(self, db: Session, token: TokenWatch):
         items = await self.birdeye.token_top_traders(token.address, limit=20)

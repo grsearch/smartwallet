@@ -72,16 +72,32 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     tokens = db.scalars(select(TokenWatch).order_by(desc(TokenWatch.discovered_at)).limit(50)).all()
     events = db.scalars(select(SystemEvent).order_by(desc(SystemEvent.created_at)).limit(20)).all()
 
+    now = datetime.utcnow()
+    token_rows = []
+    for t in tokens:
+        elapsed = max(0, int((now - t.discovered_at).total_seconds())) if t.discovered_at else 0
+        current_age_seconds = max(0, int(t.age_seconds + elapsed))
+        token_rows.append(
+            {
+                "symbol": t.symbol,
+                "address": t.address,
+                "fdv": t.fdv,
+                "lp_usd": t.lp_usd,
+                "lp_fdv_ratio": t.lp_fdv_ratio,
+                "age_seconds": current_age_seconds,
+            }
+        )
+
     return templates.TemplateResponse(
         "dashboard.html",
         {
             "request": request,
             "formal": formal,
             "prelist": prelist,
-            "tokens": tokens,
+            "tokens": token_rows,
             "events": events,
             "distribution": service.wallet_distribution(db),
-            "now": datetime.utcnow(),
+            "now": now,
         },
     )
 

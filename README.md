@@ -63,3 +63,12 @@ curl -X POST http://127.0.0.1:8000/api/run/daily
 - 使用 Birdeye 官方接口：`/defi/v2/tokens/top_traders`。
 - 解析多个可能的钱包字段（`owner/ownerAddress/wallet/walletAddress/maker/trader`）。
 - 对地址做 Solana base58 格式校验，并二次检查钱包是否存在近期交易，过滤无交易记录地址。
+
+
+## 过滤硬条件（已在管道中生效）
+
+- AGE：`4小时 <= AGE <= 7天`
+- FDV：`FDV > 500000`
+- LP/FDV：`LP/FDV > 10%`
+
+其中 AGE/FDV/LP 数据会通过 Birdeye + DexScreener 多来源聚合并刷新到目标代币记录。
